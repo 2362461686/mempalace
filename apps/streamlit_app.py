@@ -1,33 +1,31 @@
-"""Streamlit Memory Palace Browser — visual interface for MemPalace.
+"""记忆宫殿浏览器 — MemPalace 可视化搜索界面
 
-Launch:
+启动:
     streamlit run apps/streamlit_app.py
-
-Dependencies:
-    pip install streamlit
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import traceback
 from pathlib import Path
 
 import streamlit as st
 
-# ---- Page config -----------------------------------------------------------
+# ---- 页面配置 ---------------------------------------------------------------
 st.set_page_config(
-    page_title="MemPalace Browser",
+    page_title="记忆宫殿浏览器",
     page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ---- CSS -------------------------------------------------------------------
+# ---- CSS 样式 ---------------------------------------------------------------
 st.markdown(
     """
 <style>
-    .main-header { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .main-header { font-size: 2rem; font-weight: 700; margin-bottom: 0.3rem; }
     .search-result {
         border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem;
         margin-bottom: 0.75rem; background: #fafafa;
@@ -43,40 +41,41 @@ st.markdown(
     }
     .similarity-badge {
         background: #e6f4ea; color: #137333; padding: 2px 8px;
-        border-radius: 4px; font-size: 0.8rem; font-weight: 600;
+        border-radius: 4px; font-size: 0.9rem; font-weight: 600;
     }
     .result-text {
         background: white; border: 1px solid #eee; border-radius: 6px;
-        padding: 0.75rem; margin-top: 0.5rem; font-family: 'Consolas', monospace;
+        padding: 0.75rem; margin-top: 0.5rem; font-family: 'Consolas', 'Microsoft YaHei', monospace;
         font-size: 0.85rem; white-space: pre-wrap; max-height: 300px; overflow-y: auto;
     }
-    .stat-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white; border-radius: 10px; padding: 1rem; text-align: center;
-    }
-    .stat-value { font-size: 2rem; font-weight: 700; }
-    .stat-label { font-size: 0.8rem; opacity: 0.9; }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
-# ---- Helpers ----------------------------------------------------------------
+# ---- 工具函数 ----------------------------------------------------------------
+@st.cache_resource
+def get_collection_cached(palace_path_str: str):
+    """缓存 collection 连接，避免每次查询都重新连接."""
+    from mempalace.palace import get_collection
+    return get_collection(palace_path_str)
+
+
 def resolve_palace_path(user_input: str) -> Path | None:
-    """Resolve a palace path from user input."""
+    """解析 palace 路径."""
+    if not user_input:
+        return None
     path = Path(user_input).expanduser().resolve()
     if path.exists() and path.is_dir():
         return path
     return None
 
 
-def count_drawers(palace_path: Path) -> int:
-    """Count total drawers in the palace."""
+def count_drawers(palace_path_str: str) -> int:
+    """统计抽屉总数."""
     try:
-        from mempalace.palace import get_collection
-
-        col = get_collection(str(palace_path))
+        col = get_collection_cached(palace_path_str)
         if col is None:
             return 0
         return col.count()
@@ -84,173 +83,202 @@ def count_drawers(palace_path: Path) -> int:
         return 0
 
 
-def search_palace(
-    query: str, palace_path: str, n_results: int = 20
-) -> dict:
-    """Run a programmatic search and return results dict."""
+def do_search(query: str, palace_path_str: str, n_results: int) -> dict:
+    """执行语义搜索，返回结果字典."""
     from mempalace.searcher import search_memories
 
     return search_memories(
         query=query,
-        palace_path=palace_path,
+        palace_path=palace_path_str,
         n_results=n_results,
     )
 
 
-def format_text_preview(text: str, max_len: int = 500) -> str:
-    """Truncate text for preview."""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + f"\n\n... ({len(text) - max_len} more characters)"
-
-
-# ---- Sidebar ----------------------------------------------------------------
+# ---- 侧边栏 ----------------------------------------------------------------
 with st.sidebar:
-    st.markdown("## 🏛️ MemPalace Browser")
+    st.markdown("## 🏛️ 记忆宫殿浏览器")
     st.markdown("---")
 
     palace_input = st.text_input(
-        "Palace directory path",
+        "记忆宫殿路径",
         value=os.environ.get("MEMPALACE_PATH", ""),
-        placeholder="~/my-palace or C:\\Users\\...",
-        help="Path to your MemPalace directory (created with `mempalace init`)",
+        placeholder="例如: C:\\Users\\...\\mypalace",
+        help="mempalace init 创建的目录路径",
     )
 
     palace_path = resolve_palace_path(palace_input) if palace_input else None
 
     if palace_path:
-        st.success(f"✅ Palace found: `{palace_path.name}`")
+        palace_str = str(palace_path)
+        st.success(f"✅ 已找到宫殿: `{palace_path.name}`")
         try:
-            total = count_drawers(palace_path)
-            st.metric("Total Drawers", total)
-        except Exception:
-            st.metric("Total Drawers", "N/A")
+            total = count_drawers(palace_str)
+            st.metric("抽屉总数", total)
+        except Exception as e:
+            st.metric("抽屉总数", f"加载失败: {e}")
     else:
         if palace_input:
-            st.error("❌ Palace not found at this path")
+            st.error("❌ 未找到此路径的记忆宫殿")
         else:
-            st.info("Enter a palace directory path to begin")
+            st.info("在左侧输入宫殿路径以开始使用")
 
     st.markdown("---")
-    n_results = st.slider("Max results", 5, 50, 20, 5)
+    n_results = st.slider("最大搜索结果数", 5, 50, 20, 5)
     st.markdown("---")
-    st.caption("Powered by [MemPalace](https://github.com/MemPalace/mempalace)")
+    st.caption("基于 [MemPalace](https://github.com/2362461686/mempalace) 构建 | 本地运行 · 零 API 调用")
 
 
-# ---- Main Area --------------------------------------------------------------
-st.markdown('<div class="main-header">🏛️ Memory Palace Browser</div>', unsafe_allow_html=True)
-st.caption("Search your AI conversation history and project knowledge — verbatim, local, private.")
+# ---- 主页面 ----------------------------------------------------------------
+st.markdown('<div class="main-header">🏛️ 记忆宫殿浏览器</div>', unsafe_allow_html=True)
+st.caption("搜索你的 AI 对话历史和项目知识 — 逐字存储、本地运行、完全私密。")
+
+# 初始化 session state
+if "search_results" not in st.session_state:
+    st.session_state.search_results = None
+if "search_query_display" not in st.session_state:
+    st.session_state.search_query_display = ""
 
 if not palace_path:
-    # Welcome / getting-started view
+    # 欢迎页
     st.info(
         """
-        ### Welcome to MemPalace Browser!
+        ### 欢迎使用记忆宫殿浏览器！
 
-        This is a visual interface for your **MemPalace** — a local-first AI memory system
-        that stores your conversation history and project knowledge as verbatim text.
+        这是一个 **MemPalace** 的可视化界面 — 一个本地优先的 AI 记忆系统，
+        能够将你的对话历史和项目文档逐字存储，并支持语义搜索。
 
-        **To get started:**
+        **快速开始：**
 
-        1. Initialize a palace: `mempalace init ~/my-palace`
-        2. Mine some content: `mempalace mine ~/my-project`
-        3. Paste your palace path in the sidebar
-        4. Start searching!
-
-        No data ever leaves your machine. No API keys required.
+        1. 初始化宫殿：`python demo_data/setup_demo.py`
+        2. 在左侧输入宫殿路径（例如 `demo_data/mypalace`）
+        3. 输入关键词开始搜索！
         """
     )
 else:
-    # ---- Search bar ---------------------------------------------------------
+    palace_str = str(palace_path)
+
+    # 搜索栏
     col1, col2 = st.columns([4, 1])
     with col1:
         query = st.text_input(
-            "Search your memory palace…",
-            placeholder="e.g. what did I work on last week?",
-            key="search_query",
+            "搜索你的记忆…",
+            placeholder="例如: 什么是记忆系统架构？",
+            key="search_input",
             label_visibility="collapsed",
         )
     with col2:
-        search_clicked = st.button("🔍 Search", use_container_width=True, type="primary")
+        search_clicked = st.button("🔍 搜索", use_container_width=True, type="primary")
 
-    if query or search_clicked:
+    # 执行搜索
+    if search_clicked or (query and st.session_state.get("_last_query") != query):
         if not query:
-            st.warning("Please enter a search query.")
+            st.warning("请输入搜索关键词。")
         else:
-            with st.spinner(f"Searching for: *{query}*"):
+            st.session_state._last_query = query
+            with st.spinner(f"正在搜索: *{query}*"):
                 try:
-                    results = search_palace(
-                        query=query,
-                        palace_path=str(palace_path),
-                        n_results=n_results,
-                    )
+                    raw = do_search(query=query, palace_path_str=palace_str, n_results=n_results)
+
+                    # search_memories 返回 dict，结果在 "results" 键中
+                    hits = raw.get("results", []) if isinstance(raw, dict) else []
+
+                    # 调试模式 (按 D 键查看原始返回结构)
+                    if st.session_state.get("debug", False):
+                        with st.expander("🔧 调试信息"):
+                            st.json(raw)
+
+                    if not hits:
+                        st.info(f'未找到与 "{query}" 相关的结果，请尝试其他关键词。')
+                        st.session_state.search_results = []
+                        st.session_state.search_query_display = query
+                    else:
+                        st.success(f'找到 {len(hits)} 条与 "*{query}*" 相关的结果')
+                        st.session_state.search_results = hits
+                        st.session_state.search_query_display = query
+
                 except Exception as e:
-                    st.error(f"Search failed: {e}")
-                    results = None
+                    st.error(f"搜索失败: {e}")
+                    with st.expander("错误详情"):
+                        st.code(traceback.format_exc())
+                    st.session_state.search_results = None
 
-            if results is None:
-                pass  # Error already shown
-            elif "error" in results:
-                st.error(f"Search error: {results['error']}")
-            elif "hits" not in results or not results["hits"]:
-                st.info(f'No results found for "{query}". Try different keywords.')
+    # 显示搜索结果
+    hits = st.session_state.search_results
+    if hits is not None and len(hits) > 0:
+        for i, hit in enumerate(hits, 1):
+            similarity = hit.get("similarity", 0)
+            sim_pct = f"{similarity * 100:.1f}%"
+
+            if similarity > 0.7:
+                sim_color, sim_bg = "#137333", "#e6f4ea"
+            elif similarity > 0.4:
+                sim_color, sim_bg = "#e37400", "#fef7e0"
             else:
-                hits = results["hits"]
-                st.success(f"Found {len(hits)} results for *{query}*")
+                sim_color, sim_bg = "#c5221f", "#fce8e6"
 
-                for i, hit in enumerate(hits, 1):
-                    similarity = hit.get("similarity", 0)
-                    sim_pct = f"{similarity * 100:.1f}%"
-                    sim_color = (
-                        "green" if similarity > 0.7 else "orange" if similarity > 0.4 else "red"
-                    )
+            wing = hit.get("wing", "未知")
+            room = hit.get("room", "未知")
+            source = hit.get("source_file", "未知")
 
-                    with st.container():
-                        st.markdown(
-                            f"""
-                        <div class="search-result">
-                            <div class="result-header">
-                                <div>
-                                    <span class="wing-badge">🪽 {hit.get("wing", "?")}</span>
-                                    <span class="room-badge">🏠 {hit.get("room", "?")}</span>
-                                    <small style="color:#888">📄 {hit.get("source_file", "?")}</small>
-                                </div>
-                                <span class="similarity-badge" style="color:{sim_color}">
-                                    🎯 {sim_pct}
-                                </span>
+            with st.container():
+                st.markdown(
+                    f"""
+                    <div class="search-result">
+                        <div class="result-header">
+                            <div>
+                                <span class="wing-badge">翼楼: {wing}</span>
+                                <span class="room-badge">房间: {room}</span>
+                                <small style="color:#888; margin-left:8px;">源文件: {source}</small>
                             </div>
+                            <span class="similarity-badge" style="color:{sim_color}; background:{sim_bg}; padding:4px 10px; border-radius:6px;">
+                                相关度 {sim_pct}
+                            </span>
                         </div>
-                        """,
-                            unsafe_allow_html=True,
-                        )
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                        text = hit.get("text", "")
-                        with st.expander(f"📝 Result #{i} — View Content", expanded=(i <= 3)):
-                            st.code(text, language=None)
-                            if "created_at" in hit:
-                                st.caption(f"Created: {hit['created_at']}")
-                            if hit.get("matched_via") == "drawer+closet":
-                                st.caption("🔗 Matched via drawer + closet (higher confidence)")
+                text = hit.get("text", "")
+                matched_via = hit.get("matched_via", "")
+                matched_label = "（混合匹配，置信度更高）" if "closet" in matched_via else ""
+                with st.expander(f"结果 #{i} — 查看内容 {matched_label}", expanded=(i <= 3)):
+                    st.code(text, language=None)
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if hit.get("created_at"):
+                            st.caption(f"创建时间: {hit['created_at']}")
+                        if hit.get("bm25_score"):
+                            st.caption(f"BM25 得分: {hit['bm25_score']:.3f}")
+                    with col_b:
+                        st.caption(f"相似度距离: {hit.get('distance', 'N/A')}")
+                        st.caption(f"匹配方式: {matched_via}")
 
-                        if i < len(hits):
-                            st.markdown("---")
+                st.markdown("---")
+
+    elif st.session_state.search_results == []:
+        pass  # 已显示"未找到"
 
     elif not query:
-        # Show a prompt to search
-        st.markdown("### 👆 Enter a query above to search your memory palace")
+        st.markdown("### 👆 在上方输入关键词搜索你的记忆宫殿")
         st.markdown(
             """
-        **Example queries:**
-        - What bug did I fix last week?
-        - Summarize the architecture decisions
-        - Who is working on the auth module?
-        """
+            **示例查询:**
+            - 什么是记忆系统架构？
+            - 这个项目用了哪些技术栈？
+            - 隐私保护是如何实现的？
+            """
         )
 
-# ---- Footer ----------------------------------------------------------------
+
+# ---- 底部 ----------------------------------------------------------------
 st.markdown("---")
-st.caption(
-    "Data stays local. No API calls. No telemetry. "
-    "MemPalace Browser is a community contribution — "
-    "star us on [GitHub](https://github.com/MemPalace/mempalace)!"
-)
+col_f1, col_f2 = st.columns([3, 1])
+with col_f1:
+    st.caption(
+        "数据完全存储在本地。零 API 调用。零遥测。"
+        "记忆宫殿浏览器为社区贡献 — "
+        "在 [GitHub](https://github.com/2362461686/mempalace) 上给我们 Star！"
+    )
+with col_f2:
+    debug = st.checkbox("调试模式", value=False, key="debug")
