@@ -4,6 +4,8 @@
 
 # MemPalace
 
+**🌍 [English](README.md) | [中文文档](README.zh.md)**
+
 Local-first AI memory. Verbatim storage, pluggable backend, 96.6% R@5 raw on LongMemEval — zero API calls.
 
 [![][version-shield]][release-link]
@@ -277,6 +279,8 @@ No API key is required for the core benchmark path.
 - Corrections and public notices → [docs/HISTORY.md](docs/HISTORY.md)
 
 ## Community Additions
+
+> 中文用户请查看 [**README.zh.md**](README.zh.md) 获取完整的使用指南和 Demo 演示。
 
 This fork includes community contributions that extend MemPalace:
 
