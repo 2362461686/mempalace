@@ -1,0 +1,28 @@
+VideoLingo Project Overview
+===========================
+
+VideoLingo is an all-in-one video translation, localization, and dubbing tool
+aimed at generating Netflix-quality subtitles. It eliminates stiff machine
+translations and multi-line subtitles while adding high-quality dubbing.
+
+Architecture:
+- Core pipeline: yt-dlp download -> WhisperX ASR -> NLP subtitle splitting
+  -> AI translation (3-step: translate-reflect-adapt) -> subtitle generation
+  -> dubbing (multiple TTS backends) -> final video assembly
+
+Key Technologies:
+- Python 3.10+, Streamlit web UI
+- WhisperX for word-level subtitle recognition
+- yt-dlp for YouTube video downloading
+- spaCy for NLP-based sentence splitting
+- Multiple LLM backends: Claude, GPT, Gemini, DeepSeek
+- Multiple TTS backends: Azure, OpenAI, FishTTS, GPT-SoVITS, Edge-TTS, CosyVoice2
+
+The translation pipeline uses a custom 3-step process:
+1. Direct translation of each line
+2. Self-reflection on translation quality
+3. Adaptation to fit subtitle constraints (single-line, Netflix standard)
+
+The dubbing system handles audio speed matching to ensure dubbing fits within
+the original subtitle durations. It includes tolerance settings for trimming
+and extension of audio segments.

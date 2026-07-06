@@ -119,7 +119,7 @@ multilingual = []
 # Install: pip install mempalace[bge]
 bge = ["sentence-transformers>=3.0"]
 # LangChain integration (retriever + chat memory). Install: pip install mempalace[langchain]
-langchain = ["langchain>=0.3", "langchain-core>=0.3"]
+langchain = ["langchain>=0.3", "langchain-core>=0.3", "langchain-community>=0.3"]
 # Streamlit UI. Install: pip install mempalace[ui]
 ui = ["streamlit>=1.28"]
 # Binary-format extraction for `mempalace mine --mode extract`. Per-format

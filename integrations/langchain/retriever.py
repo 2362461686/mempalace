@@ -64,17 +64,22 @@ class MemPalaceRetriever(BaseRetriever):
             raise RuntimeError(f"MemPalace search failed: {results['error']}")
 
         documents: list[Document] = []
-        for hit in results.get("hits", []):
+        for hit in results.get("results", results.get("hits", [])):
+            text = hit.get("text", "")
+            similarity = hit.get("similarity", 0)
+            source_file = hit.get("source_file", "")
+            if not text:
+                continue
             metadata = {
-                "source": hit.get("source_file", ""),
+                "source": source_file,
                 "wing": hit.get("wing", ""),
                 "room": hit.get("room", ""),
-                "similarity": hit.get("similarity", 0),
+                "similarity": similarity,
                 "created_at": hit.get("created_at", ""),
                 "matched_via": hit.get("matched_via", "drawer"),
-                "source_path": hit.get("source_path", ""),
+                "source_path": hit.get("source_path", source_file),
             }
-            doc = Document(page_content=hit.get("text", ""), metadata=metadata)
+            doc = Document(page_content=text, metadata=metadata)
             documents.append(doc)
 
         return documents

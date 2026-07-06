@@ -1,8 +1,8 @@
 """MemPalace LangChain Chat Memory — persistent cross-session memory for agents.
 
-Implements LangChain's ``BaseChatMemory`` using MemPalace as the persistent
-backend. Every conversation turn is stored verbatim in the palace, and the
-memory loads relevant history on demand via semantic search.
+Provides a standalone chat memory class backed by MemPalace that works with
+LangChain >= 1.0. Every conversation turn is stored verbatim, and memory
+loads relevant history via semantic search.
 
 Usage:
     from integrations.langchain import MemPalaceChatMemory
@@ -10,66 +10,77 @@ Usage:
     memory = MemPalaceChatMemory(
         palace_path="~/my-palace",
         wing="my-agent",
-        return_messages=True,
     )
+
+    # Save turns
+    memory.save_context({"input": "hello"}, {"output": "hi there!"})
+
+    # Load history
+    history = memory.load_memory_variables({"input": "tell me more"})
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Optional
 
-from langchain.memory.chat_memory import BaseChatMemory
-from langchain_core.messages import AIMessage, HumanMessage
-from pydantic import Field
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 
-class MemPalaceChatMemory(BaseChatMemory):
-    """Chat memory backed by MemPalace for persistent, local-first agent memory.
+class MemPalaceChatMemory:
+    """Standalone chat memory backed by MemPalace for LangChain >= 1.0.
 
-    Every HumanMessage and AIMessage is saved as a drawer in the palace.
-    When loading memory, the most recent N messages are returned, optionally
-    enriched with semantically relevant past conversations.
+    Stores every conversation turn in the palace with role metadata.
+    Loads recent history + semantically relevant past conversations.
 
     Parameters
     ----------
     palace_path : str
         Path to the MemPalace directory.
     wing : str
-        Wing name for organizing conversations (default ``"agent-chat"``).
+        Wing name for organizing this agent's conversations.
+    return_messages : bool
+        If True, returns a list of LangChain Message objects.
+        If False, returns a formatted string (default True).
     max_token_limit : int
-        Maximum approximate tokens to load (default 4000).
+        Approximate maximum tokens for history (default 4000).
     semantic_recall : bool
-        If True, also retrieve semantically similar past messages
-        in addition to the most recent ones (default False).
+        Also fetch semantically similar past messages (default True).
     semantic_k : int
-        Number of semantic recall messages to fetch (default 5).
+        Number of recalled messages (default 5).
     """
 
-    palace_path: str
-    wing: str = "agent-chat"
-    max_token_limit: int = 4000
-    semantic_recall: bool = False
-    semantic_k: int = 5
+    def __init__(
+        self,
+        palace_path: str,
+        wing: str = "agent-chat",
+        return_messages: bool = True,
+        max_token_limit: int = 4000,
+        semantic_recall: bool = True,
+        semantic_k: int = 5,
+    ):
+        self.palace_path = palace_path
+        self.wing = wing
+        self.return_messages = return_messages
+        self.max_token_limit = max_token_limit
+        self.semantic_recall = semantic_recall
+        self.semantic_k = semantic_k
 
-    # Internal index for the current session
-    _session_room: str = Field(default="", exclude=True)
-    _message_counter: int = Field(default=0, exclude=True)
+        # In-memory buffer for the current session
+        self._chat_history: list[BaseMessage] = []
 
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        # Create a unique room name for this session
+        # Session room identifier
         ts = datetime.now().strftime("%Y-%m-%d-%H%M%S")
         self._session_room = f"session-{ts}"
         self._message_counter = 0
 
     @property
     def memory_variables(self) -> list[str]:
+        """Return the memory variable names used by LangChain chains."""
         return ["history"]
 
     def _save_to_palace(self, role: str, content: str) -> None:
-        """Store a single message as a drawer in the palace."""
+        """Store a message as a drawer in MemPalace."""
         try:
             from mempalace.palace import get_collection
             from mempalace.embedding import get_embedding_function
@@ -79,77 +90,64 @@ class MemPalaceChatMemory(BaseChatMemory):
 
             self._message_counter += 1
             doc_id = f"{self._session_room}-msg-{self._message_counter:04d}"
-            embedding = ef([content])
+            embeddings = ef([content])
 
             col.add(
                 documents=[content],
                 ids=[doc_id],
-                embeddings=embedding,
-                metadatas=[
-                    {
-                        "wing": self.wing,
-                        "room": self._session_room,
-                        "role": role,
-                        "source_file": f"chat:{self._session_room}",
-                        "filed_at": datetime.now().isoformat(),
-                        "chunk_index": self._message_counter,
-                    }
-                ],
+                embeddings=embeddings,
+                metadatas=[{
+                    "wing": self.wing,
+                    "room": self._session_room,
+                    "role": role,
+                    "source_file": f"chat:{self._session_room}",
+                    "filed_at": datetime.now().isoformat(),
+                    "chunk_index": self._message_counter,
+                }],
             )
         except Exception:
-            # Memory save failures should not crash the agent conversation.
+            # Memory persistence failures should not crash conversations.
             pass
 
     def save_context(
-        self, inputs: dict[str, Any], outputs: dict[str, str]
+        self, inputs: dict[str, Any], outputs: dict[str, Any]
     ) -> None:
-        """Save conversation context to MemPalace."""
-        # Save user input
-        input_str = self._get_input_string(inputs)
+        """Save conversation context to MemPalace and in-memory buffer."""
+        # Extract input text
+        input_str = ""
+        if "input" in inputs:
+            input_str = str(inputs["input"])
+        else:
+            parts = [str(v) for k, v in inputs.items() if k != "history"]
+            input_str = " ".join(parts)
+
+        # Extract output text
+        output_str = ""
+        if "output" in outputs:
+            output_str = str(outputs["output"])
+        elif "response" in outputs:
+            output_str = str(outputs["response"])
+        else:
+            output_str = " ".join(str(v) for v in outputs.values())
+
+        # Persist to palace
         if input_str:
             self._save_to_palace("human", input_str)
-
-        # Save AI output
-        output_str = self._get_output_string(outputs)
         if output_str:
             self._save_to_palace("ai", output_str)
 
-        # Also save to in-memory chat history (parent class behavior)
-        super().save_context(inputs, outputs)
+        # Keep in memory buffer
+        if input_str:
+            self._chat_history.append(HumanMessage(content=input_str))
+        if output_str:
+            self._chat_history.append(AIMessage(content=output_str))
 
-    def _get_input_string(self, inputs: dict[str, Any]) -> str:
-        """Extract input text from the inputs dict."""
-        if "input" in inputs:
-            return str(inputs["input"])
-        # Concatenate all non-memory inputs
-        parts = []
-        for k, v in inputs.items():
-            if k == "history":
-                continue
-            parts.append(str(v))
-        return " ".join(parts)
-
-    def _get_output_string(self, outputs: dict[str, str]) -> str:
-        """Extract output text from the outputs dict."""
-        if "output" in outputs:
-            return outputs["output"]
-        if "response" in outputs:
-            return outputs["response"]
-        return " ".join(str(v) for v in outputs.values())
-
-    def load_memory_variables(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Load memory variables, including semantic recall if enabled."""
-        # Always include the recent in-memory messages (parent class behavior)
-        base = super().load_memory_variables(inputs)
-
-        if not self.semantic_recall:
-            return base
-
-        # Add semantically relevant past messages
-        query = self._get_input_string(inputs) if inputs else ""
+    def _load_semantic_memory(
+        self, query: str
+    ) -> list[BaseMessage]:
+        """Fetch semantically relevant past messages from the palace."""
         if not query:
-            return base
-
+            return []
         try:
             from mempalace.searcher import search_memories
 
@@ -160,34 +158,50 @@ class MemPalaceChatMemory(BaseChatMemory):
                 n_results=self.semantic_k,
             )
 
-            recall_messages: list = []
-            for hit in results.get("hits", []):
+            messages: list[BaseMessage] = []
+            for hit in results.get("results", results.get("hits", [])):
                 role = hit.get("metadata", {}).get("role", "unknown")
                 text = hit.get("text", "")
-                if role == "human":
-                    recall_messages.append(HumanMessage(content=text))
-                elif role == "ai":
-                    recall_messages.append(AIMessage(content=text))
+                if not text:
+                    continue
+                if role in ("human", "user"):
+                    messages.append(HumanMessage(content=text))
+                elif role in ("ai", "assistant"):
+                    messages.append(AIMessage(content=text))
                 else:
-                    recall_messages.append(HumanMessage(content=text))
-
-            # Prepend recalled messages before recent history
-            existing = base.get("history", [])
-            if isinstance(existing, list):
-                base["history"] = recall_messages + existing
-            elif isinstance(existing, str):
-                recall_str = "\n".join(
-                    f"{'Human' if isinstance(m, HumanMessage) else 'AI'}: {m.content}"
-                    for m in recall_messages
-                )
-                base["history"] = recall_str + "\n" + existing
-
+                    messages.append(HumanMessage(content=text))
+            return messages
         except Exception:
-            # Semantic recall failure should not break the conversation.
-            pass
+            return []
 
-        return base
+    def load_memory_variables(
+        self, inputs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load memory variables (history) for the next conversation turn."""
+        query = ""
+        if isinstance(inputs, dict):
+            query = str(inputs.get("input", ""))
+
+        messages: list[BaseMessage] = []
+
+        # Layer 1: Semantic recall of past conversations
+        if self.semantic_recall and query:
+            recall = self._load_semantic_memory(query)
+            messages.extend(recall)
+
+        # Layer 2: Current session history
+        messages.extend(self._chat_history)
+
+        if self.return_messages:
+            return {"history": messages}
+        else:
+            # Format as string
+            lines = []
+            for msg in messages:
+                role = "Human" if isinstance(msg, HumanMessage) else "AI"
+                lines.append(f"{role}: {msg.content}")
+            return {"history": "\n".join(lines)}
 
     def clear(self) -> None:
-        """Clear in-memory history (palace content is preserved)."""
-        super().clear()
+        """Clear the in-memory chat history."""
+        self._chat_history.clear()
