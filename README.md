@@ -276,6 +276,39 @@ No API key is required for the core benchmark path.
 - Release notes → [CHANGELOG.md](CHANGELOG.md)
 - Corrections and public notices → [docs/HISTORY.md](docs/HISTORY.md)
 
+## Community Additions
+
+This fork includes community contributions that extend MemPalace:
+
+### BGE Chinese Embedding
+- **`mempalace/embedding_bge.py`** — BAAI BGE Chinese embedding models (bge-small-zh, bge-base-zh, bge-large-zh)
+- Optimized for Chinese language retrieval with query instruction prefixes
+- Drop-in compatible with ChromaDB embedding function protocol
+
+```bash
+pip install mempalace[bge]
+mempalace init ~/my-palace --embedding-model bge-small-zh
+```
+
+### Streamlit Memory Browser
+- **`apps/streamlit_app.py`** — Visual browser for your memory palace
+- Search, browse, and explore wings/rooms/drawers via web UI
+
+```bash
+pip install mempalace[ui]
+streamlit run apps/streamlit_app.py
+```
+
+### LangChain Integration
+- **`integrations/langchain/`** — MemPalace as a LangChain memory/retrieval backend
+- `MemPalaceRetriever` — semantic search as LangChain `BaseRetriever`
+- `MemPalaceChatMemory` — persistent cross-session agent memory
+
+```bash
+pip install mempalace[langchain]
+python integrations/langchain/example.py
+```
+
 ## Contributing
 
 PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

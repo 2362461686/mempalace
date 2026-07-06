@@ -115,6 +115,13 @@ coreml = ["onnxruntime>=1.16"]
 # Multilingual extra kept as a no-op alias for back-compat with
 # `pip install mempalace[multilingual]` — these deps now ship in core.
 multilingual = []
+# BGE Chinese embedding support (sentence-transformers ~1 GB with model).
+# Install: pip install mempalace[bge]
+bge = ["sentence-transformers>=3.0"]
+# LangChain integration (retriever + chat memory). Install: pip install mempalace[langchain]
+langchain = ["langchain>=0.3", "langchain-core>=0.3"]
+# Streamlit UI. Install: pip install mempalace[ui]
+ui = ["streamlit>=1.28"]
 # Binary-format extraction for `mempalace mine --mode extract`. Per-format
 # transformer routing: striprtf for .rtf, MarkItDown for .pdf/.docx/.pptx/
 # .xlsx/.epub. MarkItDown requires Python ≥ 3.10 (env marker ensures it

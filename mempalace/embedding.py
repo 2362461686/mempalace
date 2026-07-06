@@ -390,6 +390,12 @@ def get_embedding_function(device: Optional[str] = None, model: Optional[str] = 
         threads = _resolve_intra_op_threads()
         if model == "embeddinggemma":
             ef = EmbeddinggemmaONNX(preferred_providers=providers, intra_op_num_threads=threads)
+        elif model.startswith("bge-"):
+            # BGE Chinese / multilingual models — delegate to embedding_bge module.
+            # Model name format: bge-small-zh / bge-base-zh / bge-large-zh
+            from .embedding_bge import get_bge_embedding_function
+
+            ef = get_bge_embedding_function(model_key=model, device=device)
         else:
             # Default: minilm (or anything we don't recognize — back-compat win).
             ef_cls = _build_ef_class()
